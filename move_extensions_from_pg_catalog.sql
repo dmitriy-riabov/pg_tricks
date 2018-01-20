@@ -8,29 +8,40 @@ DECLARE
 BEGIN
     FOR r IN SELECT
                 e.extname, c.relname,
-                format('update %I set %snamespace = %L::regnamespace::oid where oid = %L;', 
+                format('update %I set %I = %L::regnamespace where oid = %L;', 
                     c.relname, 
-                    CASE c.relname WHEN 'pg_class' THEN 'rel' WHEN 'pg_operator' THEN 'opr' ELSE substr(c.relname, 4, 3) END,
+                    a.attname,
                     new_schema,
                     d.objid
-                ) query
+                ) query,
+                CASE c.relname WHEN 'pg_class' THEN 
+                    format('update pg_type u set typnamespace = %L::regnamespace from pg_type t where t.typrelid = %L and u.oid in (t.oid, t.typarray);', 
+                        new_schema,
+                        d.objid
+                    )
+                END type_query
             FROM pg_depend d
-            JOIN pg_extension e ON e.oid = d.refobjid AND e.extrelocatable AND e.extnamespace = 'pg_catalog'::regnamespace::oid
-            JOIN pg_class c ON c.oid = d.classid AND c.relname <> 'pg_cast'
+            JOIN pg_extension e ON e.oid = d.refobjid AND e.extrelocatable AND e.extnamespace = 'pg_catalog'::regnamespace
+            JOIN pg_class c ON c.oid = d.classid
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname like '%namespace'
             WHERE d.deptype = 'e'
             UNION ALL
             SELECT
                 extname, null,
-                format('update %I set extnamespace = %L::regnamespace::oid where oid = %L;', 
+                format('update %I set extnamespace = %L::regnamespace where oid = %L;', 
                     tableoid::regclass, 
                     new_schema,
                     oid
-                )
-            FROM pg_extension WHERE extrelocatable AND extnamespace = 'pg_catalog'::regnamespace::oid
+                ), null
+            FROM pg_extension WHERE extrelocatable AND extnamespace = 'pg_catalog'::regnamespace
             ORDER BY extname, relname LOOP
             
         EXECUTE r.query;
         RETURN NEXT r.query;
+        if r.type_query notnull then
+            EXECUTE r.type_query;
+            RETURN NEXT r.type_query;
+        end if;
     END LOOP;
     RETURN;
 END;
