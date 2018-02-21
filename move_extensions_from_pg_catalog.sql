@@ -1,5 +1,6 @@
 CREATE FUNCTION move_extensions_from_pg_catalog (
-    new_schema regnamespace = 'public'
+    new_schema regnamespace = 'public',
+    variadic extensions name [] = NULL
 )
 RETURNS SETOF text AS
 $body$
@@ -14,7 +15,7 @@ BEGIN
                         new_schema,
                         oid
                     ) query
-                FROM pg_extension WHERE extrelocatable AND extnamespace = 'pg_catalog'::regnamespace
+                FROM pg_extension WHERE extrelocatable AND (extname = ANY(extensions) OR extensions IS NULL) AND extnamespace = 'pg_catalog'::regnamespace
                 UNION ALL
                 SELECT
                     d.objid,
